@@ -9133,6 +9133,7 @@ static bool is_bpf_cast_to_kern_ctx_kfunc(const struct bpf_call_arg_meta *meta);
 static bool is_bpf_dynptr_clone_kfunc(const struct bpf_call_arg_meta *meta);
 static bool is_bpf_iter_css_task_new_kfunc(const struct bpf_call_arg_meta *meta);
 static bool is_kfunc_dynptr_write(struct bpf_call_arg_meta *meta);
+static bool is_kfunc_dynptr_write_arg(struct bpf_call_arg_meta *meta, u32 arg);
 static bool is_bpf_obj_drop_kfunc(u32 func_id);
 static bool is_bpf_percpu_obj_drop_kfunc(u32 func_id);
 static bool is_bpf_rbtree_add_kfunc(u32 func_id);
@@ -10210,7 +10211,8 @@ static int check_func_arg(struct bpf_verifier_env *env, u32 arg, u32 slot, u32 p
 		err = process_dynptr_func(env, reg, argno, insn_idx, arg_type, meta);
 		if (err)
 			return err;
-		if (!arg && is_kfunc_dynptr_write(meta))
+		if (is_kfunc_dynptr_write(meta) && is_kfunc_dynptr_write_arg(meta, arg) &&
+		    !dynptr_write_changes_pkt_data(meta->dynptr_write_type))
 			meta->dynptr_write_type = meta->dynptr.type;
 		break;
 	}
@@ -13952,7 +13954,10 @@ static bool is_kfunc_bpf_preempt_enable(struct bpf_call_arg_meta *meta)
 	return is_kfunc_call(meta, special_kfunc_list[KF_bpf_preempt_enable]);
 }
 
-/* These write to what their first argument, a dynptr, points to */
+/*
+ * These write to what a dynptr argument points to: the first argument, or
+ * for the crypto kfuncs the third and fourth (dynptr_write_crypto_kfuncs).
+ */
 BTF_SET_START(dynptr_write_kfuncs)
 BTF_ID(func, bpf_dynptr_copy)
 BTF_ID(func, bpf_dynptr_memset)
@@ -13966,12 +13971,31 @@ BTF_ID(func, bpf_copy_from_user_str_dynptr)
 BTF_ID(func, bpf_copy_from_user_task_dynptr)
 BTF_ID(func, bpf_copy_from_user_task_str_dynptr)
 #endif
+#ifdef CONFIG_BPF_CRYPTO
+BTF_ID(func, bpf_crypto_encrypt)
+BTF_ID(func, bpf_crypto_decrypt)
+#endif
 BTF_SET_END(dynptr_write_kfuncs)
+
+/* The crypto kfuncs take (ctx, src, dst, iv) and write through dst and iv. */
+BTF_SET_START(dynptr_write_crypto_kfuncs)
+#ifdef CONFIG_BPF_CRYPTO
+BTF_ID(func, bpf_crypto_encrypt)
+BTF_ID(func, bpf_crypto_decrypt)
+#endif
+BTF_SET_END(dynptr_write_crypto_kfuncs)
 
 static bool is_kfunc_dynptr_write(struct bpf_call_arg_meta *meta)
 {
 	return meta->btf == btf_vmlinux &&
 	       btf_id_set_contains(&dynptr_write_kfuncs, meta->func_id);
+}
+
+static bool is_kfunc_dynptr_write_arg(struct bpf_call_arg_meta *meta, u32 arg)
+{
+	if (btf_id_set_contains(&dynptr_write_crypto_kfuncs, meta->func_id))
+		return arg == 2 || arg == 3;
+	return arg == 0;
 }
 
 /*
