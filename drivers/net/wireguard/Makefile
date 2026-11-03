@@ -14,4 +14,9 @@ wireguard-y += allowedips.o
 wireguard-y += ratelimiter.o
 wireguard-y += cookie.o
 wireguard-y += netlink.o generated/netlink.o
+ifeq ($(CONFIG_WIREGUARD),m)
+wireguard-$(CONFIG_DEBUG_INFO_BTF_MODULES) += bpf.o
+else ifeq ($(CONFIG_WIREGUARD),y)
+wireguard-$(CONFIG_DEBUG_INFO_BTF) += bpf.o
+endif
 obj-$(CONFIG_WIREGUARD) := wireguard.o

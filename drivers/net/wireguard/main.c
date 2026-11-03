@@ -41,6 +41,10 @@ static int __init wg_mod_init(void)
 	if (ret < 0)
 		goto err_device;
 
+	ret = wg_bpf_init();
+	if (ret < 0)
+		goto err_bpf;
+
 	ret = wg_genetlink_init();
 	if (ret < 0)
 		goto err_netlink;
@@ -51,6 +55,7 @@ static int __init wg_mod_init(void)
 	return 0;
 
 err_netlink:
+err_bpf:
 	wg_device_uninit();
 err_device:
 	wg_peer_uninit();

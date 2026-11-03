@@ -239,6 +239,11 @@ static const struct net_device_ops netdev_ops = {
 	.ndo_start_xmit		= wg_xmit,
 };
 
+bool wg_is_wireguard_device(const struct net_device *dev)
+{
+	return dev->netdev_ops == &netdev_ops;
+}
+
 static void wg_destruct(struct net_device *dev)
 {
 	struct wg_device *wg = netdev_priv(dev);

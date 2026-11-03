@@ -59,4 +59,17 @@ struct wg_device {
 int wg_device_init(void);
 void wg_device_uninit(void);
 
+bool wg_is_wireguard_device(const struct net_device *dev);
+
+#if (IS_BUILTIN(CONFIG_WIREGUARD) && IS_ENABLED(CONFIG_DEBUG_INFO_BTF)) || \
+	(IS_MODULE(CONFIG_WIREGUARD) && \
+	 IS_ENABLED(CONFIG_DEBUG_INFO_BTF_MODULES))
+int wg_bpf_init(void);
+#else
+static inline int wg_bpf_init(void)
+{
+	return 0;
+}
+#endif
+
 #endif /* _WG_DEVICE_H */
