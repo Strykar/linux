@@ -9133,6 +9133,8 @@ static bool is_bpf_cast_to_kern_ctx_kfunc(const struct bpf_call_arg_meta *meta);
 static bool is_bpf_dynptr_clone_kfunc(const struct bpf_call_arg_meta *meta);
 static bool is_bpf_iter_css_task_new_kfunc(const struct bpf_call_arg_meta *meta);
 static bool is_kfunc_dynptr_write(struct bpf_call_arg_meta *meta);
+static bool is_kfunc_dynptr_write_inplace_arg(struct bpf_call_arg_meta *meta,
+					      u32 arg);
 static bool is_bpf_obj_drop_kfunc(u32 func_id);
 static bool is_bpf_percpu_obj_drop_kfunc(u32 func_id);
 static bool is_bpf_rbtree_add_kfunc(u32 func_id);
@@ -10210,7 +10212,9 @@ static int check_func_arg(struct bpf_verifier_env *env, u32 arg, u32 slot, u32 p
 		err = process_dynptr_func(env, reg, argno, insn_idx, arg_type, meta);
 		if (err)
 			return err;
-		if (!arg && is_kfunc_dynptr_write(meta))
+		if ((!arg && is_kfunc_dynptr_write(meta)) ||
+		    (is_kfunc_dynptr_write_inplace_arg(meta, arg) &&
+		     !dynptr_write_changes_pkt_data(meta->dynptr_write_type)))
 			meta->dynptr_write_type = meta->dynptr.type;
 		break;
 	}
@@ -13975,6 +13979,30 @@ static bool is_kfunc_dynptr_write(struct bpf_call_arg_meta *meta)
 }
 
 /*
+ * The crypto kfuncs write in place through dst (arg 2) and iv (arg 3) and
+ * never reallocate the head: they need bpf_unclone_prologue() but are not
+ * packet changing.
+ */
+BTF_SET_START(dynptr_write_inplace_kfuncs)
+#ifdef CONFIG_BPF_CRYPTO
+BTF_ID(func, bpf_crypto_encrypt)
+BTF_ID(func, bpf_crypto_decrypt)
+#endif
+BTF_SET_END(dynptr_write_inplace_kfuncs)
+
+static bool is_kfunc_dynptr_write_inplace(struct bpf_call_arg_meta *meta)
+{
+	return meta->btf == btf_vmlinux &&
+	       btf_id_set_contains(&dynptr_write_inplace_kfuncs, meta->func_id);
+}
+
+static bool is_kfunc_dynptr_write_inplace_arg(struct bpf_call_arg_meta *meta,
+					      u32 arg)
+{
+	return (arg == 2 || arg == 3) && is_kfunc_dynptr_write_inplace(meta);
+}
+
+/*
  * A write through the dynptr of an skb may reallocate its head. Before the
  * arguments are checked nobody knows what kind of dynptr it is.
  */
@@ -15955,7 +15983,8 @@ static int check_kfunc_call(struct bpf_verifier_env *env, struct bpf_insn *insn,
 	 * These kfuncs write to the head of the skb in place if what they write
 	 * to is linear. Like a direct write that takes bpf_unclone_prologue().
 	 */
-	if (is_kfunc_dynptr_write(&meta) &&
+	if ((is_kfunc_dynptr_write(&meta) ||
+	     is_kfunc_dynptr_write_inplace(&meta)) &&
 	    dynptr_write_changes_pkt_data(meta.dynptr_write_type))
 		may_access_direct_pkt_data(env, NULL, BPF_WRITE);
 
