@@ -28,6 +28,9 @@ typedef int (*nl_ext_ack_fn_t)(const char *errmsg, uint32_t off,
 
 int rtnl_open(struct rtnl_handle *rth, unsigned int subscriptions)
 	      __attribute__((warn_unused_result));
+int rtnl_open_byproto(struct rtnl_handle *rth, unsigned int subscriptions,
+		      int protocol)
+		      __attribute__((warn_unused_result));
 void rtnl_close(struct rtnl_handle *rth);
 int rtnl_talk(struct rtnl_handle *rtnl, struct nlmsghdr *n,
 	      struct nlmsghdr **answer)
